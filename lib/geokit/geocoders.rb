@@ -294,7 +294,7 @@ module Geokit
       # Template method which does the geocode lookup.
       def self.do_geocode(address, options = {})
         address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
-        url="http://api.local.yahoo.com/MapsService/V1/geocode?appid=#{Geokit::Geocoders::yahoo}&location=#{Geokit::Inflector::url_escape(address_str)}"
+        url="http://where.yahooapis.com/geocode?appid=#{Geokit::Geocoders::yahoo}&count=100&location=#{Geokit::Inflector::url_escape(address_str)}"
         res = self.call_geocoder_service(url)
         return GeoLoc.new if !res.is_a?(Net::HTTPSuccess)
         xml = res.body
@@ -302,24 +302,38 @@ module Geokit
         logger.debug "Yahoo geocoding. Address: #{address}. Result: #{xml}"
 
         if doc.elements['//ResultSet']
-          res=GeoLoc.new
+          if result = doc.elements['//Result']
+            res=GeoLoc.new
 
-          #basic      
-          res.lat=doc.elements['//Latitude'].text
-          res.lng=doc.elements['//Longitude'].text
-          res.country_code=doc.elements['//Country'].text
-          res.provider='yahoo'  
+            res.lat=result.elements['latitude'].text
+            res.lng=result.elements['longitude'].text
+            res.country_code=result.elements['countrycode'].text
+            #res.county=result.elements['//county'].text
+            res.provider='yahoo'
 
-          #extended - false if not available
-          res.city=doc.elements['//City'].text if doc.elements['//City'] && doc.elements['//City'].text != nil
-          res.state=doc.elements['//State'].text if doc.elements['//State'] && doc.elements['//State'].text != nil
-          res.zip=doc.elements['//Zip'].text if doc.elements['//Zip'] && doc.elements['//Zip'].text != nil
-          res.street_address=doc.elements['//Address'].text if doc.elements['//Address'] && doc.elements['//Address'].text != nil
-          res.precision=doc.elements['//Result'].attributes['precision'] if doc.elements['//Result']
-          # set the accuracy as google does (added by Andruby)
-          res.accuracy=%w{unknown country state state city zip zip+4 street address building}.index(res.precision)
-          res.success=true
+            res.city=result.elements['city'].text if result.elements['city'] && result.elements['city'].text != nil
+            res.state=result.elements['statecode'].text if result.elements['statecode'] && result.elements['statecode'].text != nil
+            res.zip=result.elements['postal'].text if result.elements['postal'] && result.elements['postal'].text != nil
+            res.street_address="#{result.elements['house'].text} #{result.elements['street'].text}".squeeze(" ") if result.elements['street'] && result.elements['street'].text != nil
+            res.full_address = "#{result.elements['line1'].text}, #{result.elements['line2'].text}".squeeze(" ") if result.elements['line2'] && result.elements['line2'].text != nil && result.elements['line1'] && result.elements['line1'].text != nil
+
+            res.accuracy = case result.elements['quality'].text.to_i
+            when 0       then 0 # unknown
+            when 1..10   then 1 # country
+            when 11..20  then 2 # state
+            when 21..30  then 3 # county
+            when 40..59  then 4 # city
+            when 60..73  then 5 # zip
+            when 74..83  then 6 # zip+4
+            when 84..86  then 7 # street
+            else              8 # address
+            end
+
+            res.success=true
+          end
+
           return res
+
         else 
           logger.info "Yahoo was unable to geocode address: "+address
           return GeoLoc.new

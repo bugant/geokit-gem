@@ -329,6 +329,8 @@ module Geokit
             else              8 # address
             end
 
+            res.precision=%w{unknown country state state city zip zip+4 street address building}[res.accuracy]
+
             res.success=true
           end
 

@@ -107,7 +107,7 @@ class YahooGeocoderTest < BaseGeocoderTest #:nodoc: all
     assert_equal "San Francisco", res.city
     assert_equal "37.792418,-122.393913", res.ll
     assert res.is_us?
-    assert_equal "100 Spear St, San Francisco, CA 94105-1578", res.full_address
+    assert_equal "100 Spear St, San Francisco, CA 94105, USA", res.full_address
     assert_equal "yahoo", res.provider
   end
   

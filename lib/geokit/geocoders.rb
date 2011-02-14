@@ -314,9 +314,6 @@ module Geokit
             res.city=result.elements['city'].text if result.elements['city'] && result.elements['city'].text != nil
             res.state=result.elements['statecode'].text if result.elements['statecode'] && result.elements['statecode'].text != nil
             res.zip=result.elements['postal'].text if result.elements['postal'] && result.elements['postal'].text != nil
-            res.street_address="#{result.elements['house'].text} #{result.elements['street'].text}".squeeze(" ") if result.elements['street'] && result.elements['street'].text != nil
-            res.full_address = "#{result.elements['line1'].text}, #{result.elements['line2'].text}".squeeze(" ") if result.elements['line2'] && result.elements['line2'].text != nil && result.elements['line1'] && result.elements['line1'].text != nil
-
             res.accuracy = case result.elements['quality'].text.to_i
             when 0       then 0 # unknown
             when 1..10   then 1 # country
@@ -328,8 +325,22 @@ module Geokit
             when 84..86  then 7 # street
             else              8 # address
             end
-
             res.precision=%w{unknown country state state city zip zip+4 street address building}[res.accuracy]
+
+            res.street_address="#{result.elements['house'].text} #{result.elements['street'].text}".squeeze(" ") if result.elements['street'] && result.elements['street'].text != nil
+
+            if res.accuracy > 7
+              zip_match = res.zip.match(/[0-9]{5}/)
+              if zip_match = res.zip.match(/[0-9]{5}/) and zip_match[0]
+                short_zip = zip_match[0]
+              else
+                short_zip = res.zip
+              end
+              country = res.country_code == 'US' ? 'USA' : res.country_code
+              res.full_address = "#{result.elements['line1'].text}, #{res.city}, #{res.state} #{short_zip}, #{country}"
+            else
+              res.full_address = "#{result.elements['line1'].text}, #{result.elements['line2'].text}".squeeze(" ") if result.elements['line2'] && result.elements['line2'].text != nil && result.elements['line1'] && result.elements['line1'].text != nil
+            end
 
             res.success=true
           end

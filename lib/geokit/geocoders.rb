@@ -8,6 +8,9 @@ require 'logger'
 module Geokit
 
   class TooManyQueriesError < StandardError; end
+  # Error which is thrown in the event a geocoding error occurs.
+  class GeocodeError < StandardError; end
+
 
   module Inflector
    
@@ -50,13 +53,13 @@ module Geokit
   # Contains a range of geocoders:
   # 
   # ### "regular" address geocoders 
-  # * Yahoo Geocoder - requires an API key.
   # * Geocoder.us - may require authentication if performing more than the free request limit.
   # * Geocoder.ca - for Canada; may require authentication as well.
   # * Geonames - a free geocoder
   #
   # ### address geocoders that also provide reverse geocoding 
   # * Google Geocoder - requires an API key.
+  # * Yahoo Geocoder - requires an API key.
   #  
   # ### IP address geocoders 
   # * IP Geocoder - geocodes an IP address using hostip.info's web service.
@@ -110,9 +113,6 @@ module Geokit
 
     __define_accessors
     
-    # Error which is thrown in the event a geocoding error occurs.
-    class GeocodeError < StandardError; end
-
     # -------------------------------------------------------------------------------------------
     # Geocoder Base class -- every geocoder should inherit from this
     # -------------------------------------------------------------------------------------------    
@@ -282,79 +282,6 @@ module Geokit
           logger.error "Caught an error during geocoder.us geocoding call: "+$!
           return GeoLoc.new
 
-      end
-    end
-    
-    # Yahoo geocoder implementation.  Requires the Geokit::Geocoders::YAHOO variable to
-    # contain a Yahoo API key.  Conforms to the interface set by the Geocoder class.
-    class YahooGeocoder < Geocoder
-
-      private 
-
-      # Template method which does the geocode lookup.
-      def self.do_geocode(address, options = {})
-        address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
-        url="http://where.yahooapis.com/geocode?appid=#{Geokit::Geocoders::yahoo}&count=100&location=#{Geokit::Inflector::url_escape(address_str)}"
-        res = self.call_geocoder_service(url)
-        return GeoLoc.new if !res.is_a?(Net::HTTPSuccess)
-        xml = res.body
-        doc = REXML::Document.new(xml)
-        logger.debug "Yahoo geocoding. Address: #{address}. Result: #{xml}"
-
-        if doc.elements['//ResultSet']
-          if result = doc.elements['//Result']
-            res=GeoLoc.new
-
-            res.lat=result.elements['latitude'].text
-            res.lng=result.elements['longitude'].text
-            res.country_code=result.elements['countrycode'].text
-            #res.county=result.elements['//county'].text
-            res.provider='yahoo'
-
-            res.city=result.elements['city'].text if result.elements['city'] && result.elements['city'].text != nil
-            res.state=result.elements['statecode'].text if result.elements['statecode'] && result.elements['statecode'].text != nil
-            res.zip=result.elements['postal'].text if result.elements['postal'] && result.elements['postal'].text != nil
-            res.accuracy = case result.elements['quality'].text.to_i
-            when 0       then 0 # unknown
-            when 1..10   then 1 # country
-            when 11..20  then 2 # state
-            when 21..30  then 3 # county
-            when 40..59  then 4 # city
-            when 60..73  then 5 # zip
-            when 74..83  then 6 # zip+4
-            when 84..86  then 7 # street
-            else              8 # address
-            end
-            res.precision=%w{unknown country state state city zip zip+4 street address building}[res.accuracy]
-
-            res.street_address="#{result.elements['house'].text} #{result.elements['street'].text}".squeeze(" ") if result.elements['street'] && result.elements['street'].text != nil
-
-            if res.accuracy > 7
-              zip_match = res.zip.match(/[0-9]{5}/)
-              if zip_match = res.zip.match(/[0-9]{5}/) and zip_match[0]
-                short_zip = zip_match[0]
-              else
-                short_zip = res.zip
-              end
-              country = res.country_code == 'US' ? 'USA' : res.country_code
-              res.full_address = "#{result.elements['line1'].text}, #{res.city}, #{res.state} #{short_zip}, #{country}"
-            else
-              res.full_address = "#{result.elements['line1'].text}, #{result.elements['line2'].text}".squeeze(" ") if result.elements['line2'] && result.elements['line2'].text != nil && result.elements['line1'] && result.elements['line1'].text != nil
-            end
-
-            res.success=true
-          end
-
-          return res
-
-        else 
-          logger.info "Yahoo was unable to geocode address: "+address
-          return GeoLoc.new
-        end   
-
-        rescue 
-          logger.info "Caught an error during Yahoo geocoding call: "+$!
-          return GeoLoc.new
       end
     end
 
@@ -546,7 +473,153 @@ module Geokit
         return res
       end
     end
+    
+    # Yahoo geocoder implementation.  Requires the Geokit::Geocoders::YAHOO variable to
+    # contain a Yahoo API key.  Conforms to the interface set by the Geocoder class.
+    class YahooGeocoder < Geocoder
 
+      private
+      @@PLACE_FINDER_URI = "http://where.yahooapis.com/geocode?"
+
+      def self.place_finder_url(appid, options = {})
+        url = @@PLACE_FINDER_URI + appid.to_s
+        options.each_pair do |par, val|
+          url += "&" + par + "=" + val
+        end
+        url
+      end
+
+      def self.xml2GeoLoc(xml, address="")
+        doc = REXML::Document.new(xml)
+        res = GeoLoc.new
+        if doc.elements['//ResultSet']
+          error = doc.elements['//Error'].text.to_i
+          raise(Geokit::GeocodeError, doc.elements['//ErrorMessage'].text) if error != 0
+          if result = doc.elements['//Result']
+            res.lat=result.elements['latitude'].text
+            res.lng=result.elements['longitude'].text
+            res.country_code=result.elements['countrycode'].text
+            #res.county=result.elements['//county'].text
+            res.provider='yahoo'
+
+            res.city=result.elements['city'].text if result.elements['city'] && result.elements['city'].text != nil
+            res.province=result.elements['county'].text if result.elements['county'] && result.elements['county'].text != nil
+            res.state=result.elements['state'].text if result.elements['state'] && result.elements['state'].text != nil
+            res.zip=result.elements['postal'].text if result.elements['postal'] && result.elements['postal'].text != nil
+            res.accuracy = case result.elements['quality'].text.to_i
+              when 0       then 0 # unknown
+              when 1..10   then 1 # country
+              when 11..20  then 2 # state
+              when 21..30  then 3 # county
+              when 40..59  then 4 # city
+              when 60..73  then 5 # zip
+              when 74..83  then 6 # zip+4
+              when 84..86  then 7 # street
+              else              8 # address
+            end
+            res.precision=%w{unknown country state state city zip zip+4 street address building}[res.accuracy]
+
+            res.street_address="#{result.elements['house'].text} #{result.elements['street'].text}".squeeze(" ") if result.elements['street'] && result.elements['street'].text != nil
+
+            if res.accuracy > 7
+              zip_match = res.zip.match(/[0-9]{5}/)
+              if zip_match = res.zip.match(/[0-9]{5}/) and zip_match[0]
+                short_zip = zip_match[0]
+              else
+                short_zip = res.zip
+              end
+              country = res.country_code == 'US' ? 'USA' : res.country_code
+              res.full_address = "#{result.elements['line1'].text}, #{res.city}, #{res.state} #{short_zip}, #{country}"
+            else
+              res.full_address = "#{result.elements['line1'].text}, #{result.elements['line2'].text}".squeeze(" ") if result.elements['line2'] && result.elements['line2'].text != nil && result.elements['line1'] && result.elements['line1'].text != nil
+            end
+
+            res.success=true
+          end
+        else
+          logger.info "Yahoo was unable to geocode address: " + address
+        end
+        res
+      end
+
+      # Template method which does the reverse-geocode lookup.
+      def self.do_reverse_geocode(latlng) 
+        latlng=LatLng.normalize(latlng)
+        url = self.place_finder_url(Geokit::Geocoders::yahoo, {"location" => Geokit::Inflector::url_escape(latlng.ll), "gflags" => "R"})
+        res = self.call_geocoder_service(url)
+        return GeoLoc.new unless (res.is_a?(Net::HTTPSuccess) || res.is_a?(Net::HTTPOK))
+        xml = res.body
+        logger.debug "Yahoo reverse-geocoding. LL: #{latlng}. Result: #{xml}"
+        return self.xml2GeoLoc(xml)
+      end
+
+      # Template method which does the geocode lookup.
+      def self.do_geocode(address, options = {})
+        address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
+        url="http://where.yahooapis.com/geocode?appid=#{Geokit::Geocoders::yahoo}&count=100&location=#{Geokit::Inflector::url_escape(address_str)}"
+        res = self.call_geocoder_service(url)
+        return GeoLoc.new if !res.is_a?(Net::HTTPSuccess)
+        xml = res.body
+        # doc = REXML::Document.new(xml)
+        logger.debug "Yahoo geocoding. Address: #{address}. Result: #{xml}"
+        return self.xml2GeoLoc(xml, address)
+
+        # if doc.elements['//ResultSet']
+        #   if result = doc.elements['//Result']
+        #     res=GeoLoc.new
+
+        #     res.lat=result.elements['latitude'].text
+        #     res.lng=result.elements['longitude'].text
+        #     res.country_code=result.elements['countrycode'].text
+        #     #res.county=result.elements['//county'].text
+        #     res.provider='yahoo'
+
+        #     res.city=result.elements['city'].text if result.elements['city'] && result.elements['city'].text != nil
+        #     res.state=result.elements['statecode'].text if result.elements['statecode'] && result.elements['statecode'].text != nil
+        #     res.zip=result.elements['postal'].text if result.elements['postal'] && result.elements['postal'].text != nil
+        #     res.accuracy = case result.elements['quality'].text.to_i
+        #     when 0       then 0 # unknown
+        #     when 1..10   then 1 # country
+        #     when 11..20  then 2 # state
+        #     when 21..30  then 3 # county
+        #     when 40..59  then 4 # city
+        #     when 60..73  then 5 # zip
+        #     when 74..83  then 6 # zip+4
+        #     when 84..86  then 7 # street
+        #     else              8 # address
+        #     end
+        #     res.precision=%w{unknown country state state city zip zip+4 street address building}[res.accuracy]
+
+        #     res.street_address="#{result.elements['house'].text} #{result.elements['street'].text}".squeeze(" ") if result.elements['street'] && result.elements['street'].text != nil
+
+        #     if res.accuracy > 7
+        #       zip_match = res.zip.match(/[0-9]{5}/)
+        #       if zip_match = res.zip.match(/[0-9]{5}/) and zip_match[0]
+        #         short_zip = zip_match[0]
+        #       else
+        #         short_zip = res.zip
+        #       end
+        #       country = res.country_code == 'US' ? 'USA' : res.country_code
+        #       res.full_address = "#{result.elements['line1'].text}, #{res.city}, #{res.state} #{short_zip}, #{country}"
+        #     else
+        #       res.full_address = "#{result.elements['line1'].text}, #{result.elements['line2'].text}".squeeze(" ") if result.elements['line2'] && result.elements['line2'].text != nil && result.elements['line1'] && result.elements['line1'].text != nil
+        #     end
+
+        #     res.success=true
+        #   end
+
+        #   return res
+
+        # else 
+        #   logger.info "Yahoo was unable to geocode address: "+address
+        #   return GeoLoc.new
+        # end   
+
+        rescue 
+          logger.info "Caught an error during Yahoo geocoding call: "+$!
+          return GeoLoc.new
+      end
+    end
 
     # -------------------------------------------------------------------------------------------
     # IP Geocoders

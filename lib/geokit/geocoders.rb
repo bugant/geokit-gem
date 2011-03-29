@@ -479,7 +479,7 @@ module Geokit
     class YahooGeocoder < Geocoder
 
       private
-      @@PLACE_FINDER_URI = "http://where.yahooapis.com/geocode?"
+      @@PLACE_FINDER_URI = "http://where.yahooapis.com/geocode?appid="
 
       def self.place_finder_url(appid, options = {})
         url = @@PLACE_FINDER_URI + appid.to_s
@@ -499,7 +499,7 @@ module Geokit
             res.lat=result.elements['latitude'].text
             res.lng=result.elements['longitude'].text
             res.country_code=result.elements['countrycode'].text
-            #res.county=result.elements['//county'].text
+            res.country=result.elements['country'].text
             res.provider='yahoo'
 
             res.city=result.elements['city'].text if result.elements['city'] && result.elements['city'].text != nil
@@ -539,11 +539,16 @@ module Geokit
         else
           logger.info "Yahoo was unable to geocode address: " + address
         end
+
         res
+
+        rescue
+          logger.error "Caught an error during Google geocoding call: "+$!
+          return GeoLoc.new
       end
 
       # Template method which does the reverse-geocode lookup.
-      def self.do_reverse_geocode(latlng) 
+      def self.do_reverse_geocode(latlng)
         latlng=LatLng.normalize(latlng)
         url = self.place_finder_url(Geokit::Geocoders::yahoo, {"location" => Geokit::Inflector::url_escape(latlng.ll), "gflags" => "R"})
         res = self.call_geocoder_service(url)
@@ -556,7 +561,7 @@ module Geokit
       # Template method which does the geocode lookup.
       def self.do_geocode(address, options = {})
         address_str = address.is_a?(GeoLoc) ? address.to_geocodeable_s : address
-        url="http://where.yahooapis.com/geocode?appid=#{Geokit::Geocoders::yahoo}&count=100&location=#{Geokit::Inflector::url_escape(address_str)}"
+        url = self.place_finder_url(Geokit::Geocoders::yahoo, {"location" => Geokit::Inflector::url_escape(address_str), "count" => "100"})
         res = self.call_geocoder_service(url)
         return GeoLoc.new if !res.is_a?(Net::HTTPSuccess)
         xml = res.body

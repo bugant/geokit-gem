@@ -216,7 +216,7 @@ module Geokit
         address.success = true
         return address
       rescue
-        logger.error "Caught an error during Geocoder.ca geocoding call: "+$!
+        logger.error "Caught an error during Geocoder.ca geocoding call: " + $!.to_s
         return GeoLoc.new  
       end  
 
@@ -279,7 +279,7 @@ module Geokit
           return GeoLoc.new      
         end
         rescue 
-          logger.error "Caught an error during geocoder.us geocoding call: "+$!
+          logger.error "Caught an error during geocoder.us geocoding call: " + $!.to_s
           return GeoLoc.new
 
       end
@@ -331,7 +331,7 @@ module Geokit
         end
         
         rescue
-          logger.error "Caught an error during Geonames geocoding call: "+$!
+          logger.error "Caught an error during Geonames geocoding call: " + $!.to_s
       end
     end
 
@@ -431,7 +431,7 @@ module Geokit
         # re-raise because of other rescue
         raise Geokit::TooManyQueriesError, "Google returned a 620 status, too many queries. The given key has gone over the requests limit in the 24 hour period or has submitted too many requests in too short a period of time. If you're sending multiple requests in parallel or in a tight loop, use a timer or pause in your code to make sure you don't send the requests too quickly."
       rescue
-        logger.error "Caught an error during Google geocoding call: "+$!
+        logger.error "Caught an error during Google geocoding call: " + $!.to_s
         return GeoLoc.new
       end  
 
@@ -543,7 +543,7 @@ module Geokit
         res
 
         rescue
-          logger.error "Caught an error during Google geocoding call: "+$!
+          logger.error "Caught an error during Google geocoding call: " + $!.to_s
           return GeoLoc.new
       end
 
@@ -621,7 +621,7 @@ module Geokit
         # end   
 
         rescue 
-          logger.info "Caught an error during Yahoo geocoding call: "+$!
+          logger.info "Caught an error during Yahoo geocoding call: " + $!.to_s
           return GeoLoc.new
       end
     end
@@ -639,7 +639,7 @@ module Geokit
         response = self.call_geocoder_service("http://www.geoplugin.net/xml.gp?ip=#{ip}")
         return response.is_a?(Net::HTTPSuccess) ? parse_xml(response.body) : GeoLoc.new
       rescue
-        logger.error "Caught an error during GeoPluginGeocoder geocoding call: "+$!
+        logger.error "Caught an error during GeoPluginGeocoder geocoding call: " + $!.to_s
         return GeoLoc.new
       end
 
@@ -695,7 +695,7 @@ module Geokit
         response = self.call_geocoder_service(url)
         response.is_a?(Net::HTTPSuccess) ? parse_body(response.body) : GeoLoc.new
       rescue
-        logger.error "Caught an error during HostIp geocoding call: "+$!
+        logger.error "Caught an error during HostIp geocoding call: " + $!.to_s
         return GeoLoc.new
       end
 

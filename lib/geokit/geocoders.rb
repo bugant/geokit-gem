@@ -543,7 +543,8 @@ module Geokit
         res
 
         rescue
-          logger.error "Caught an error during Google geocoding call: " + $!.to_s
+          logger.error "Error while geocoding address #{address}" if address != ""
+          logger.error "Caught an error during Yahoo geocoding call: " + $!.to_s
           return GeoLoc.new
       end
 
@@ -620,7 +621,7 @@ module Geokit
         #   return GeoLoc.new
         # end   
 
-        rescue 
+        rescue
           logger.info "Caught an error during Yahoo geocoding call: " + $!.to_s
           return GeoLoc.new
       end
